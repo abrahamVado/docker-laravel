@@ -1,0 +1,56 @@
+version: '3.8'  # Docker Compose file format version
+
+services:
+  app:  # Laravel PHP application
+    build:
+      context: .  # Build from the current directory
+      dockerfile: docker/php/Dockerfile  # Use custom Dockerfile for PHP
+    container_name: laravel_app  # Custom name for the container
+    volumes:
+      - .:/var/www  # Mount the entire project into the container
+      - /var/www/vendor  # Avoid syncing vendor for better performance
+      - /var/www/node_modules  # Avoid syncing node_modules
+    working_dir: /var/www  # Set working directory inside the container
+    depends_on:
+      - mysql  # Ensure MySQL is up before starting this service
+    ports:
+      - "9000:9000"  # Expose PHP-FPM port for internal use (Nginx)
+      - "5173:5173"  # Vite development server for React
+    environment:
+      APP_ENV: local  # Set Laravel environment
+    networks:
+      - appnet  # Use the shared custom network
+
+  nginx:  # Web server to serve Laravel app
+    image: nginx:alpine  # Lightweight Nginx image
+    container_name: nginx_web  # Custom container name
+    ports:
+      - "80:80"  # Expose HTTP port
+    volumes:
+      - .:/var/www  # Mount codebase to serve via Nginx
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf  # Nginx config
+    depends_on:
+      - app  # Wait for the app container to be ready
+    networks:
+      - appnet  # Same custom network
+
+  mysql:  # MySQL database service
+    image: mysql:8  # Use MySQL version 8
+    container_name: mysql_db  # Custom container name
+    ports:
+      - "3306:3306"  # Expose MySQL port
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}  # DB name from .env
+      MYSQL_USER: ${DB_USERNAME}      # DB user from .env
+      MYSQL_PASSWORD: ${DB_PASSWORD}  # DB password from .env
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}  # Root password from .env
+    volumes:
+      - mysql_data:/var/lib/mysql  # Persist MySQL data across rebuilds
+    networks:
+      - appnet  # Same custom network
+
+volumes:
+  mysql_data:  # Named volume for MySQL persistent storage
+
+networks:
+  appnet:  # Custom user-defined bridge network
