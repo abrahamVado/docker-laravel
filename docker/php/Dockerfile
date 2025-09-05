@@ -1,27 +1,63 @@
-# 🐘 Base PHP image with FPM (FastCGI Process Manager) for performance
-FROM php:8.2-fpm
+# 🐘 PHP 8.2 FPM (Debian)
+FROM php:8.2-fpm AS base
 
-# 📦 Install system dependencies and PHP extensions
-RUN apt-get update && apt-get install -y \
-    zip unzip curl git \
-    libpng-dev libonig-dev libxml2-dev libzip-dev \
-    && docker-php-ext-install \
-        pdo_mysql \
-        mbstring \
-        zip \
-        exif \
-        pcntl \
-        bcmath \
-        gd \
-        opcache  # ✅ Optional: Enable OPcache for performance
+# ---------------------------------------------------------
+# System deps + PHP extensions (MySQL + Postgres + GD/WebP)
+# ---------------------------------------------------------
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        git curl zip unzip \
+        libicu-dev \
+        libpq-dev \
+        libzip-dev \
+        libpng-dev libjpeg62-turbo-dev libwebp-dev libfreetype6-dev \
+        libonig-dev libxml2-dev; \
+    \
+    docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
+    docker-php-ext-install -j"$(nproc)" \
+        gd intl zip bcmath pcntl exif \
+        pdo_mysql pdo_pgsql opcache; \
+    \
+    pecl install redis; \
+    docker-php-ext-enable redis; \
+    \
+    rm -rf /var/lib/apt/lists/*
 
-# ✅ Install Composer (latest) from official Composer image
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# -----------------------
+# Composer (from official)
+# -----------------------
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# 📁 Set working directory
-WORKDIR /var/www
+# -----------------------
+# PHP runtime tuning (dev)
+# -----------------------
+RUN { \
+      echo 'upload_max_filesize=50M'; \
+      echo 'post_max_size=60M'; \
+      echo 'memory_limit=512M'; \
+      echo 'max_execution_time=120'; \
+      echo 'opcache.enable=1'; \
+      echo 'opcache.enable_cli=1'; \
+      echo 'opcache.validate_timestamps=1'; \
+      echo 'opcache.revalidate_freq=0'; \
+      echo 'opcache.max_accelerated_files=20000'; \
+      echo 'opcache.memory_consumption=256'; \
+      echo 'opcache.interned_strings_buffer=16'; \
+    } > /usr/local/etc/php/conf.d/zz-app.ini
 
-# 👤 Optional: Use non-root user for better security in production
-RUN useradd -G www-data,root -u 1000 -d /home/laravel laravel && \
-    mkdir -p /home/laravel && chown -R laravel:laravel /var/www
-USER laravel
+# -----------------------
+# Workdir & permissions
+# -----------------------
+WORKDIR /var/www/html
+
+# Default php-fpm user is www-data; that’s usually best for Laravel.
+# If you prefer a host-matching UID (e.g., 1000) uncomment below:
+# RUN useradd -u 1000 -G www-data,root -d /home/laravel -m laravel \
+#   && chown -R laravel:www-data /var/www/html
+# USER laravel
+
+# php-fpm listens on 9000 by default
+EXPOSE 9000
+
+CMD ["php-fpm", "-F"]

@@ -1,142 +1,159 @@
-# 🚀 Laravel 12 + Docker + React Starter
+# 🚀 Laravel 12 + Docker + React Starter (Updated)
 
-A modern, containerized development environment for Laravel 12 with React, Vite, and MySQL — built using Docker for seamless local development.
+A modern, containerized **Laravel 12 API** with **Nginx + PHP-FPM (8.2) + MySQL 8**.  
+Designed for a **React SPA (Vite)** running separately on your host (or any static hosting).
 
 ---
 
 ## 🧱 Tech Stack
 
-- ✅ Laravel 12 (PHP 8.2)
-- ✅ React + Vite (with hot reload)
+- ✅ Laravel 12 (PHP 8.2, FPM)
+- ✅ Nginx (production‑like web server)
+- ✅ MySQL 8 (UTF8MB4)
 - ✅ Docker & Docker Compose
-- ✅ MySQL 8
-- ✅ Nginx (production-like web server)
+- ✅ React + Vite (SPA) — runs outside Docker (recommended)
+
+> Why separate SPA? It keeps the PHP containers lean and avoids juggling Node inside Docker. Your SPA can consume the API at `http://localhost` using cookies (Sanctum) or tokens.
 
 ---
 
 ## 📦 Features
 
-- Full Laravel + React setup, ready for development
-- Vite + React hot reloading inside Docker
-- MySQL service with persistent volume
-- Clean Blade/React integration
-- Easily extendable (Redis, Mailpit, Horizon, etc.)
+- Clean, minimal **docker-compose**: `nginx` + `php-fpm` + `mysql`
+- PHP image with common extensions: **pdo_mysql, gd (jpeg/webp), intl, redis, zip, bcmath, pcntl, exif, opcache**
+- Nginx config tuned for Laravel (static caching, secure defaults)
+- Named volumes for `vendor` and `storage` (fast + correct perms)
+- Healthcheck for MySQL
+- Works great with **Sanctum** for SPA auth
 
 ---
 
 ## ⚙️ Getting Started
 
-### 1. Clone the Repo
+### 1) Clone & env
 ```bash
-git clone https://github.com/your-username/laravel-docker-react.git
-cd laravel-docker-react
-```
-
-### 2. Copy the Environment File
-```bash
+git clone <your-repo-url> myapp && cd myapp
 cp .env.example .env
 ```
 
-Update `.env` DB credentials if needed:
-```
+Make sure these DB values exist in `.env`:
+```dotenv
+DB_CONNECTION=mysql
 DB_HOST=mysql
 DB_PORT=3306
-DB_DATABASE=laravel
-DB_USERNAME=laravel
+DB_DATABASE=myapp
+DB_USERNAME=myapp
 DB_PASSWORD=secret
 ```
 
----
+For SPA auth (Sanctum), add:
+```dotenv
+APP_URL=http://localhost
+SESSION_DRIVER=cookie
+SESSION_DOMAIN=localhost
+SANCTUM_STATEFUL_DOMAINS=localhost:5173
+```
 
-### 3. Start Docker Services
+### 2) Start services
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
-This will start:
-- `app` (PHP + Laravel)
-- `nginx` (web server)
-- `mysql` (database)
-
----
-
-### 4. Enter Container and Install Laravel
+### 3) Install / migrate inside PHP container
 ```bash
-docker exec -it laravel_app bash
-composer install
-php artisan key:generate
-php artisan migrate
-exit
+docker exec -it laravel_app bash -lc "composer install && php artisan key:generate && php artisan migrate && php artisan storage:link"
 ```
 
----
-
-### 5. Install Frontend Dependencies
+If you see permission issues:
 ```bash
-npm install
-npm run dev
+docker exec -it laravel_app bash -lc "chown -R www-data:www-data storage bootstrap/cache && find storage bootstrap/cache -type d -exec chmod 775 {} \; && find storage bootstrap/cache -type f -exec chmod 664 {} \;"
 ```
 
-> You should see the Vite dev server at http://localhost:5173 and the Laravel app at http://localhost.
+### 4) Test
+- API: http://localhost
+- Health: `php artisan about`, `php artisan tinker` (inside container)
 
 ---
 
-## 🧪 Testing React Inside Blade
+## 🧪 Using a React SPA (recommended)
 
-In your Blade file:
-```blade
-<div id="react-root"></div>
-@vite('resources/js/app.jsx')
+Create your SPA in a sibling folder (outside Docker):
+
+```
+/project-root
+  /api   # this repo (Laravel + Docker)
+  /web   # your React app (Vite)
 ```
 
-`resources/js/app.jsx`:
-```jsx
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import Example from './components/Example';
+In `/web`:
+```bash
+npm create vite@latest web -- --template react
+cd web && npm i axios react-router-dom
+```
 
-const root = document.getElementById('react-root');
-if (root) {
-    createRoot(root).render(<Example />);
-}
+`/web/.env`:
+```
+VITE_API_URL=http://localhost/api/v1
+```
+
+Axios client (with Sanctum cookies):
+```ts
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL, withCredentials: true });
+await axios.get('http://localhost/sanctum/csrf-cookie', { withCredentials: true });
+await api.post('/auth/login', { email, password });
+```
+
+Run SPA:
+```bash
+npm run dev  # runs on http://localhost:5173
 ```
 
 ---
 
-## 🗃️ Project Structure
+## 🗃️ Structure
 
 ```
 .
-├── docker/                  # Docker configs
-│   ├── php/Dockerfile       # PHP + Composer
-│   └── nginx/default.conf   # Nginx config
-├── resources/js/            # React code
-├── public/                  # Public web root
-├── .env.example             # Environment template
-├── docker-compose.yml       # Service definitions
-├── vite.config.js           # Vite config for React
+├── docker/
+│   ├── nginx/
+│   │   └── default.conf
+│   └── php/
+│       └── Dockerfile
+├── public/
+├── app/ …
+├── composer.json
+├── docker-compose.yml
 └── README.md
 ```
 
 ---
 
-## 📌 Tips
+## 🧰 Commands
 
-- Use `docker-compose down -v` to remove containers and volumes
-- Laravel logs live in `storage/logs/`
-- You can add Redis, Mailpit, or Horizon to your compose stack
-
----
-
-## 📤 Deployment
-
-This setup is for **local development**. For production:
-- Use `npm run build` for assets
-- Add HTTPS (e.g. Caddy or Let's Encrypt)
-- Consider Laravel Octane, Supervisor, and optimized Nginx configs
+```bash
+docker compose logs -f nginx
+docker compose logs -f app
+docker exec -it laravel_app bash
+docker compose down -v   # stop & remove containers and volumes
+```
 
 ---
 
-## 📄 License
+## 🧩 Optional additions
 
-MIT — free to use, extend, and contribute!
+- **Redis** service for cache/queue
+- **Mailpit** for local email testing
+- Queue worker & scheduler containers (`queue`, `scheduler`)
+
+---
+
+## 📤 Production notes
+
+- Use `npm run build` for SPA assets (hosted separately or via CDN)
+- Enable HTTPS (TLS offload) and strict headers / CSP
+- Consider Octane + Supervisor for high concurrency
+- In production images, disable `opcache.validate_timestamps` and bake vendor into the image
+
+---
+
+MIT — enjoy! 🎉
