@@ -28,132 +28,46 @@ Designed for a **React SPA (Vite)** running separately on your host (or any stat
 
 ---
 
-## ⚙️ Getting Started
+This kit assumes you already developed your Laravel app **outside** Docker. When you're ready, drop these files into the project root and run a single script to containerize it.
 
-### 1) Clone & env
+## What’s included
+- `docker-compose.yml` — Nginx + PHP-FPM + MySQL (dev)
+- `docker/php/Dockerfile` — PHP 8.2 with common extensions
+- `docker/nginx/default.conf` — Laravel-friendly server config
+- `scripts/dockerize.sh` — one-shot: prepare `.env.docker`, build, migrate
+- `scripts/db-import.sh` — import a local SQL dump into the MySQL container
+- `Makefile` — handy commands (`make up`, `make down`, `make shell`, etc.)
+
+## One-shot: Dockerize this app
 ```bash
-git clone <your-repo-url> myapp && cd myapp
-cp .env.example .env
+cp .env .env.docker    # keep your original .env for local non-docker dev
+bash scripts/dockerize.sh
 ```
 
-Make sure these DB values exist in `.env`:
-```dotenv
-DB_CONNECTION=mysql
-DB_HOST=mysql
-DB_PORT=3306
-DB_DATABASE=myapp
-DB_USERNAME=myapp
-DB_PASSWORD=secret
-```
+It will:
+- Ensure `.env.docker` has the right Docker values (DB_HOST=mysql, ports, Sanctum)
+- Build and start the containers
+- Run `composer install`, generate the app key, run migrations, and `storage:link`
 
-For SPA auth (Sanctum), add:
-```dotenv
-APP_URL=http://localhost
-SESSION_DRIVER=cookie
-SESSION_DOMAIN=localhost
-SANCTUM_STATEFUL_DOMAINS=localhost:5173
-```
+Then open: **http://localhost**
 
-### 2) Start services
+## Import your existing local DB (optional)
 ```bash
-docker compose up -d --build
+# Export from your local MySQL (outside Docker)
+mysqldump -h 127.0.0.1 -u root -p my_local_db > dump.sql
+
+# Import into the Docker MySQL
+bash scripts/db-import.sh dump.sql
 ```
 
-### 3) Install / migrate inside PHP container
+## Make targets
 ```bash
-docker exec -it laravel_app bash -lc "composer install && php artisan key:generate && php artisan migrate && php artisan storage:link"
+make up        # build & start
+make down      # stop containers
+make restart   # rebuild & restart
+make logs      # tail logs for nginx + app
+make shell     # bash into php-fpm
+make migrate   # php artisan migrate
+make tinker    # php artisan tinker
+make perms     # fix storage/bootstrap perms
 ```
-
-If you see permission issues:
-```bash
-docker exec -it laravel_app bash -lc "chown -R www-data:www-data storage bootstrap/cache && find storage bootstrap/cache -type d -exec chmod 775 {} \; && find storage bootstrap/cache -type f -exec chmod 664 {} \;"
-```
-
-### 4) Test
-- API: http://localhost
-- Health: `php artisan about`, `php artisan tinker` (inside container)
-
----
-
-## 🧪 Using a React SPA (recommended)
-
-Create your SPA in a sibling folder (outside Docker):
-
-```
-/project-root
-  /api   # this repo (Laravel + Docker)
-  /web   # your React app (Vite)
-```
-
-In `/web`:
-```bash
-npm create vite@latest web -- --template react
-cd web && npm i axios react-router-dom
-```
-
-`/web/.env`:
-```
-VITE_API_URL=http://localhost/api/v1
-```
-
-Axios client (with Sanctum cookies):
-```ts
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL, withCredentials: true });
-await axios.get('http://localhost/sanctum/csrf-cookie', { withCredentials: true });
-await api.post('/auth/login', { email, password });
-```
-
-Run SPA:
-```bash
-npm run dev  # runs on http://localhost:5173
-```
-
----
-
-## 🗃️ Structure
-
-```
-.
-├── docker/
-│   ├── nginx/
-│   │   └── default.conf
-│   └── php/
-│       └── Dockerfile
-├── public/
-├── app/ …
-├── composer.json
-├── docker-compose.yml
-└── README.md
-```
-
----
-
-## 🧰 Commands
-
-```bash
-docker compose logs -f nginx
-docker compose logs -f app
-docker exec -it laravel_app bash
-docker compose down -v   # stop & remove containers and volumes
-```
-
----
-
-## 🧩 Optional additions
-
-- **Redis** service for cache/queue
-- **Mailpit** for local email testing
-- Queue worker & scheduler containers (`queue`, `scheduler`)
-
----
-
-## 📤 Production notes
-
-- Use `npm run build` for SPA assets (hosted separately or via CDN)
-- Enable HTTPS (TLS offload) and strict headers / CSP
-- Consider Octane + Supervisor for high concurrency
-- In production images, disable `opcache.validate_timestamps` and bake vendor into the image
-
----
-
-MIT — enjoy! 🎉
