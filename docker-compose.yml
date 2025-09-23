@@ -1,69 +1,70 @@
-version: "3.8"
-
+version: "3.9"
 services:
   app:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    container_name: laravel_app
-    working_dir: /var/www/html
-    volumes:
-      - .:/var/www/html:delegated
-      # keep vendor & storage inside containers for speed and correct perms
-      - vendor:/var/www/html/vendor
-      - storage:/var/www/html/storage
+    container_name: yamato_app
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       APP_ENV: local
-      PHP_OPCACHE_VALIDATE_TIMESTAMPS: "1"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks: [appnet]
-    restart: unless-stopped
-    # no external ports; nginx talks to php-fpm internally on port 9000
+    volumes:
+      - ./app:/var/www/html         # bind your Yamato-Laravel-API here
+      - composer-cache:/tmp/composer-cache
+    networks: [yamato]
 
   nginx:
-    image: nginx:1.27-alpine
-    container_name: nginx_web
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    container_name: yamato_nginx
+    depends_on:
+      - app
     ports:
       - "80:80"
     volumes:
-      - .:/var/www/html:delegated
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - app
-    networks: [appnet]
-    restart: unless-stopped
+      - ./app:/var/www/html
+    networks: [yamato]
 
-  mysql:
-    image: mysql:8.0
-    container_name: mysql_db
-    command: >
-      --default-authentication-plugin=mysql_native_password
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
+  postgres:
+    image: postgres:16
+    container_name: yamato_postgres
     environment:
-      MYSQL_DATABASE: ${DB_DATABASE:-myapp}
-      MYSQL_USER: ${DB_USERNAME:-myapp}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret123
+      POSTGRES_DB: yamato
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d yamato || exit 1"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 20
-    networks: [appnet]
-    restart: unless-stopped
+    networks: [yamato]
+
+  redis:
+    image: redis:7-alpine
+    container_name: yamato_redis
+    ports:
+      - "6379:6379"
+    networks: [yamato]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: yamato_mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks: [yamato]
 
 volumes:
-  mysql_data:
-  vendor:
-  storage:
+  pgdata:
+  composer-cache:
 
 networks:
-  appnet:
+  yamato:
     driver: bridge
