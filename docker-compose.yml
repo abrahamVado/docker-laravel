@@ -35,8 +35,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: secret123
       POSTGRES_DB: yamato
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -49,9 +47,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: yamato_redis
-    ports:
-      - "6379:6379"
     networks: [yamato]
+
 
   mailpit:
     image: axllent/mailpit:latest

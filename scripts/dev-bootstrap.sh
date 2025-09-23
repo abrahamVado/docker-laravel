@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/abrahamVado/Yamato-Laravel-API.git}"
-REPO_REF="${REPO_REF:-main}"
+REPO_REF="${REPO_REF:-master}"
 
 # 1) clone if missing
 if [ ! -d "./app" ]; then
